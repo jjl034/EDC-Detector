@@ -6,11 +6,12 @@ from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
 from kivy.core.window import Window
-from kivy.graphics import Color, RoundedRectangle, Line
-from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
-import database
+from kivy.metrics import dp
+from kivy.uix.popup import Popup
+from kivy.graphics import Color, RoundedRectangle, Line
+import database  # Your database.py that stores users/items
 
 # --- Theme ---
 THEME = {
@@ -26,12 +27,11 @@ THEME = {
 }
 Window.clearcolor = THEME["background"]
 
-# --- Global item list ---
-items_list = []
+# --- Global ---
+current_user = None  # Track logged-in user
+
 
 # --- Custom Widgets ---
-
-
 class ProButton(Button):
     def __init__(self, bg_color=THEME["primary"], font_size=dp(16), radius=dp(8), **kwargs):
         super().__init__(**kwargs)
@@ -48,11 +48,11 @@ class ProButton(Button):
     def update_canvas(self, *args):
         self.canvas.before.clear()
         with self.canvas.before:
-            if self.state == 'down':
-                r, g, b, a = self.custom_bg_color
+            r, g, b, a = self.custom_bg_color
+            if self.state == "down":
                 Color(r * 0.8, g * 0.8, b * 0.8, a)
             else:
-                Color(*self.custom_bg_color)
+                Color(r, g, b, a)
             RoundedRectangle(pos=self.pos, size=self.size, radius=[self.radius])
 
 
@@ -70,227 +70,174 @@ class ProInput(TextInput):
         self.multiline = False
         self.size_hint_y = None
         self.height = dp(54)
-        self.bind(pos=self.update_canvas, size=self.update_canvas, focus=self.update_canvas)
-        self.update_canvas()
-
-    def update_canvas(self, *args):
-        self.canvas.before.clear()
-        with self.canvas.before:
-            Color(*THEME["surface_active"] if self.focus else THEME["surface"])
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(10)])
-            Color(*THEME["primary"] if self.focus else THEME["border_color"])
-            Line(rounded_rectangle=(self.x, self.y, self.width, self.height, dp(10)), width=1.2)
 
 
 class ItemCard(BoxLayout):
-    def __init__(self, name, desc, index, **kwargs):
+    def __init__(self, item, **kwargs):
         super().__init__(**kwargs)
-        self.index = index
-        self.orientation = 'horizontal'
+        self.orientation = "horizontal"
         self.size_hint_y = None
-        self.height = dp(85)
-        self.padding = dp(16)
+        self.height = dp(80)
+        self.padding = dp(10)
         self.spacing = dp(15)
 
-        text_content = BoxLayout(orientation='vertical', spacing=dp(2))
-        text_content.add_widget(Label(
-            text=name, font_size=dp(18), bold=True,
-            color=THEME["text_primary"], halign='left', valign='bottom',
-            size_hint_y=0.6, text_size=(self.width, None)
-        ))
-        text_content.add_widget(Label(
-            text=desc, font_size=dp(14), color=THEME["text_secondary"],
-            halign='left', valign='top', size_hint_y=0.4, text_size=(self.width, None)
-        ))
-        self.add_widget(text_content)
-
-        edit_btn = ProButton(text="Edit", bg_color=THEME["surface_active"], font_size=dp(13), radius=dp(6))
-        edit_btn.size_hint = (None, None)
-        edit_btn.size = (dp(60), dp(34))
-        edit_btn.pos_hint = {'center_y': 0.5}
-        edit_btn.bind(on_release=self.on_edit)
-        self.add_widget(edit_btn)
-
-        self.bind(pos=self.update_canvas, size=self.update_canvas)
-
-    def update_canvas(self, *args):
-        self.canvas.before.clear()
-        with self.canvas.before:
-            Color(*THEME["surface"])
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(12)])
-            Color(*THEME["border_color"])
-            Line(rounded_rectangle=(self.x, self.y, self.width, self.height, dp(12)), width=1)
-
-    def on_edit(self, instance):
-        app = App.get_running_app()
-        if app:
-            app.root.get_screen('edit_item').load_item(self.index, items_list[self.index])
-            app.root.current = 'edit_item'
+        # Labels for name and description
+        name_lbl = Label(text=item["name"], font_size=dp(18), bold=True, color=THEME["text_primary"], halign="left")
+        desc_lbl = Label(text=item.get("desc", ""), font_size=dp(14), color=THEME["text_secondary"], halign="left")
+        box = BoxLayout(orientation="vertical")
+        box.add_widget(name_lbl)
+        box.add_widget(desc_lbl)
+        self.add_widget(box)
 
 
 # --- Screens ---
-
-
 class LoginScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.db = database.DB()
-        self.mode = 'login'
+        self.mode = "login"
 
-        card = BoxLayout(orientation='vertical', padding=dp(40), spacing=dp(24))
-        card.size_hint = (None, None)
-        card.size = (dp(360), dp(520))
-        card.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
-
-        self.title_lbl = Label(text="Everyday Carry", font_size=dp(36), bold=True, color=THEME["text_primary"], halign='center')
-        self.subtitle_lbl = Label(text="Your digital loadout manager.", font_size=dp(16), color=THEME["text_secondary"], halign='center')
-        card.add_widget(self.title_lbl)
-        card.add_widget(self.subtitle_lbl)
+        layout = BoxLayout(orientation="vertical", padding=dp(40), spacing=dp(20))
+        self.title_lbl = Label(text="Everyday Carry", font_size=dp(32), bold=True, color=THEME["text_primary"])
+        layout.add_widget(self.title_lbl)
 
         self.username = ProInput(hint_text="Email Address")
         self.password = ProInput(hint_text="Password", password=True)
-        card.add_widget(self.username)
-        card.add_widget(self.password)
+        layout.add_widget(self.username)
+        layout.add_widget(self.password)
 
-        self.feedback_lbl = Label(text="", font_size=dp(14), color=THEME["danger"], size_hint_y=None, height=dp(20), halign='center')
-        card.add_widget(self.feedback_lbl)
+        self.feedback = Label(text="", color=THEME["danger"], size_hint_y=None, height=dp(20))
+        layout.add_widget(self.feedback)
 
-        self.action_btn = ProButton(text="Sign In", height=dp(54), size_hint_y=None)
+        self.action_btn = ProButton(text="Sign In")
         self.action_btn.bind(on_release=self.perform_action)
-        card.add_widget(self.action_btn)
+        layout.add_widget(self.action_btn)
 
-        toggle_btn = Button(text="New here? Create an account", font_size=dp(14),
-                            color=THEME["primary"], background_normal="", background_down="", background_color=(0, 0, 0, 0),
-                            size_hint_y=None, height=dp(30))
+        toggle_btn = Button(text="New here? Sign Up", font_size=dp(14),
+                            color=THEME["primary"], background_color=(0, 0, 0, 0))
         toggle_btn.bind(on_release=self.toggle_mode)
-        card.add_widget(toggle_btn)
+        layout.add_widget(toggle_btn)
 
-        self.add_widget(card)
+        self.add_widget(layout)
 
     def toggle_mode(self, instance):
-        if self.mode == 'login':
-            self.mode = 'signup'
+        if self.mode == "login":
+            self.mode = "signup"
             self.title_lbl.text = "Create Account"
-            self.subtitle_lbl.text = "Join Everyday Carry today."
             self.action_btn.text = "Sign Up"
         else:
-            self.mode = 'login'
+            self.mode = "login"
             self.title_lbl.text = "Everyday Carry"
-            self.subtitle_lbl.text = "Your digital loadout manager."
             self.action_btn.text = "Sign In"
-        self.feedback_lbl.text = ""
+        self.feedback.text = ""
 
     def perform_action(self, instance):
+        global current_user
         user = self.username.text.strip()
         pwd = self.password.text.strip()
         if not user or not pwd:
-            self.feedback_lbl.text = "Please enter both Email Address and password."
+            self.feedback.text = "Please fill in both fields."
             return
 
-        if self.mode == 'login':
+        if self.mode == "login":
             if self.db.verify_user(user, pwd):
-                self.feedback_lbl.text = ""
-                self.manager.current = 'main'
+                current_user = user
+                self.manager.get_screen("main").load_items()
+                self.manager.current = "main"
                 self.username.text = ""
                 self.password.text = ""
+                self.feedback.text = ""
             else:
-                self.feedback_lbl.text = "Invalid Email Address or password."
+                self.feedback.text = "Invalid credentials."
         else:
             if self.db.create_user(user, pwd):
-                self.feedback_lbl.text = "Account created! Please sign in."
+                self.feedback.text = "Account created! Please login."
                 self.toggle_mode(None)
-                self.username.text = user
-                self.password.text = ""
             else:
-                self.feedback_lbl.text = "Email Address already exists."
-
-
-# --- Main Screen ---
+                self.feedback.text = "User already exists."
 
 
 class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        root = BoxLayout(orientation="vertical")
+        self.layout = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(10))
 
-        # Header
-        header = BoxLayout(orientation="horizontal", padding=[dp(25), dp(15)], size_hint_y=None, height=dp(70))
-        title = Label(text="Dashboard", font_size=dp(24), bold=True, color=THEME["text_primary"], halign='left', valign='middle')
-        title.bind(size=title.setter('text_size'))
-        header.add_widget(title)
-        root.add_widget(header)
+        header = BoxLayout(size_hint_y=None, height=dp(60))
+        header.add_widget(Label(text="Dashboard", font_size=dp(24), color=THEME["text_primary"]))
+        self.layout.add_widget(header)
 
         # Scrollable items
-        self.scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
-        self.items_grid = GridLayout(cols=1, spacing=dp(15), size_hint_y=None, padding=[dp(20), dp(10)])
-        self.items_grid.bind(minimum_height=self.items_grid.setter('height'))
-        self.scroll.add_widget(self.items_grid)
-        root.add_widget(self.scroll)
-        self.update_items_list()
+        self.scroll = ScrollView()
+        self.grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=[dp(10)])
+        self.grid.bind(minimum_height=self.grid.setter("height"))
+        self.scroll.add_widget(self.grid)
+        self.layout.add_widget(self.scroll)
 
-        # Bottom buttons
-        dock = BoxLayout(orientation="horizontal", spacing=dp(10), size_hint_y=None, height=dp(60))
-        add_btn = ProButton(text="Add", bg_color=THEME["primary"])
-        add_btn.bind(on_release=self.go_add)
-        dock.add_widget(add_btn)
+        # Add Item button
+        add_btn = ProButton(text="Add Item", bg_color=THEME["primary"], size_hint_y=None, height=dp(50))
+        add_btn.bind(on_release=lambda x: self.manager.current = "add_item")
+        self.layout.add_widget(add_btn)
 
-        self.add_widget(root)
+        self.add_widget(self.layout)
 
-    def update_items_list(self):
-        self.items_grid.clear_widgets()
-        if not items_list:
-            empty_box = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(100))
-            empty_box.add_widget(Label(text="No Items Found", font_size=dp(20), color=THEME["text_secondary"]))
-            self.items_grid.add_widget(empty_box)
-            return
-
-        for index, item in enumerate(items_list):
-            self.items_grid.add_widget(ItemCard(item['name'], item.get('desc', ''), index))
-
-    def go_add(self, instance):
-        self.manager.current = 'add_item'
-
-
-# --- AddItemScreen ---
+    def load_items(self):
+        self.grid.clear_widgets()
+        items = database.DB().get_items(current_user)
+        if not items:
+            self.grid.add_widget(Label(text="No Items Found", color=THEME["text_secondary"], size_hint_y=None, height=dp(50)))
+        else:
+            for item in items:
+                self.grid.add_widget(ItemCard(item))
 
 
 class AddItemScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(30), spacing=dp(20))
-        layout.add_widget(Label(text="Add Item", font_size=dp(28), color=THEME["text_primary"]))
+        self.layout = BoxLayout(orientation="vertical", padding=dp(30), spacing=dp(20))
+        self.layout.add_widget(Label(text="Add Item", font_size=dp(28), color=THEME["text_primary"]))
+
         self.item_name = ProInput(hint_text="Item Name")
-        layout.add_widget(self.item_name)
+        self.layout.add_widget(self.item_name)
         self.item_desc = ProInput(hint_text="Description")
-        layout.add_widget(self.item_desc)
-        save_btn = ProButton(text="Save")
+        self.layout.add_widget(self.item_desc)
+
+        save_btn = ProButton(text="Save Item")
         save_btn.bind(on_release=self.save_item)
-        layout.add_widget(save_btn)
-        self.add_widget(layout)
+        self.layout.add_widget(save_btn)
+
+        self.add_widget(self.layout)
 
     def save_item(self, instance):
         name = self.item_name.text.strip()
         desc = self.item_desc.text.strip()
         if name:
-            items_list.append({"name": name, "desc": desc})
-            self.manager.get_screen('main').update_items_list()
-            self.manager.current = 'main'
+            database.DB().add_item(current_user, name, desc)
+            self.manager.get_screen("main").load_items()
+            self.manager.current = "main"
             self.item_name.text = ""
             self.item_desc.text = ""
 
 
+# --- Missing Item Popup ---
+def show_missing_item(item_name, last_seen):
+    content = BoxLayout(orientation="vertical", padding=dp(20), spacing=dp(10))
+    content.add_widget(Label(text=f"Missing Item Detected!\n{item_name}\nLast seen at: {last_seen}", font_size=dp(18)))
+    btn = ProButton(text="Close")
+    content.add_widget(btn)
+    popup = Popup(title="Missing Item", content=content, size_hint=(0.7, 0.4))
+    btn.bind(on_release=popup.dismiss)
+    popup.open()
+
+
 # --- App ---
-
-
 class EverydayCarryApp(App):
     def build(self):
-        sm = ScreenManager(transition=FadeTransition(duration=0.2))
-        sm.add_widget(LoginScreen(name='login'))
-        sm.add_widget(MainScreen(name='main'))
-        sm.add_widget(AddItemScreen(name='add_item'))
+        sm = ScreenManager(transition=FadeTransition())
+        sm.add_widget(LoginScreen(name="login"))
+        sm.add_widget(MainScreen(name="main"))
+        sm.add_widget(AddItemScreen(name="add_item"))
         return sm
 
 
 if __name__ == "__main__":
     EverydayCarryApp().run()
-
