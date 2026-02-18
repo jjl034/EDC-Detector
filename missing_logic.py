@@ -1,42 +1,31 @@
 import json
 import time
-import os
+from pathlib import Path
 
-DATA_FILE = "data/items.json"
-LOGBOOK_FILE = "data/logbook.json"
+DATA_FILE = Path.home() / "EDC-Detector" / "data" / "items.json"
+LOGBOOK_FILE = Path.home() / "EDC-Detector" / "data" / "logbook.json"
 
 MISSING_TIMEOUT = 30  # seconds
 
+# Ensure directories/files exist
+DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+LOGBOOK_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+if not DATA_FILE.exists():
+    DATA_FILE.write_text("[]")
+if not LOGBOOK_FILE.exists():
+    LOGBOOK_FILE.write_text("[]")
+
 
 def load_items():
-    """Load items from JSON, create empty file if missing."""
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f:
-            json.dump([], f, indent=4)
-        return []
-
     with open(DATA_FILE, "r") as f:
         try:
             return json.load(f)
         except json.JSONDecodeError:
-            print("Error: items.json is invalid JSON, resetting file.")
-            with open(DATA_FILE, "w") as fw:
-                json.dump([], fw, indent=4)
             return []
 
 
-def save_items(items):
-    """Save updated items back to items.json"""
-    with open(DATA_FILE, "w") as f:
-        json.dump(items, f, indent=4)
-
-
 def log_event(entry):
-    """Append an event to the logbook, create file if missing."""
-    if not os.path.exists(LOGBOOK_FILE):
-        with open(LOGBOOK_FILE, "w") as f:
-            json.dump([], f, indent=4)
-
     with open(LOGBOOK_FILE, "r") as f:
         try:
             logbook = json.load(f)
@@ -50,32 +39,25 @@ def log_event(entry):
 
 
 def check_missing_items():
-    """Check all required items and print/log missing ones."""
     items = load_items()
     current_time = time.time()
 
     missing = []
 
     for item in items:
-        # Skip invalid items
         if not isinstance(item, dict):
             print("Skipping invalid item:", item)
             continue
-
-        required = item.get("required", True)
         last_seen = item.get("last_seen", 0)
-
-        if required and (current_time - last_seen) > MISSING_TIMEOUT:
-            missing.append(item.get("name"))
-            log_event({
-                "timestamp": current_time,
-                "mac": item.get("mac", "").lower(),
-                "event": "missing"
-            })
+        mac = item.get("mac", "").lower()
+        required = item.get("required", True)
+        if required and current_time - last_seen > MISSING_TIMEOUT:
+            missing.append(item.get("name", mac))
+            log_event({"timestamp": current_time, "mac": mac, "event": "missing"})
 
     if missing:
         print("Missing items:")
-        for name in missing:
-            print("-", name)
+        for m in missing:
+            print(f"- {m}")
     else:
         print("All required items present.")
