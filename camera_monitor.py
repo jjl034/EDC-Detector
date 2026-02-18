@@ -24,6 +24,7 @@ def monitor_camera():
 
     while True:
         ret, frame = cap.read()
+        print("Reading frame...")
         if not ret:
             continue
 
@@ -50,5 +51,6 @@ def monitor_camera():
             last_trigger_time = current_time
 
         time.sleep(0.1)
+
 
 
