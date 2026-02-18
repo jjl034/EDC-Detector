@@ -1,49 +1,52 @@
-import tkinter as tk
 import json
-import os
+from pathlib import Path
 
-DATA_FILE = "../raspberry_pi_backend/data/items.json"
+DATA_FILE = Path.home() / "EDC-Detector" / "data" / "items.json"
+LOGBOOK_FILE = Path.home() / "EDC-Detector" / "data" / "logbook.json"
 
+# Ensure directories exist
+DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+LOGBOOK_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-class AddItemWindow:
-    def __init__(self, parent):
-        self.window = tk.Toplevel(parent)
-        self.window.title("Add New Item")
+# Ensure files exist
+if not DATA_FILE.exists():
+    with open(DATA_FILE, "w") as f:
+        json.dump([], f)  # empty list to hold items
 
-        tk.Label(self.window, text="Item Name").pack()
-        self.name_entry = tk.Entry(self.window)
-        self.name_entry.pack()
+if not LOGBOOK_FILE.exists():
+    with open(LOGBOOK_FILE, "w") as f:
+        json.dump([], f)  # empty list to hold log entries
 
-        tk.Label(self.window, text="MAC Address").pack()
-        self.mac_entry = tk.Entry(self.window)
-        self.mac_entry.pack()
+def save_item_to_file(item):
+    """
+    Adds a new item dict to items.json.
+    """
+    with open(DATA_FILE, "r") as f:
+        try:
+            items = json.load(f)
+            if not isinstance(items, list):
+                items = []
+        except json.JSONDecodeError:
+            items = []
 
-        tk.Button(self.window, text="Save", command=self.save_item).pack(pady=10)
+    items.append(item)
 
-    def save_item(self):
-        name = self.name_entry.get().strip()
-        mac = self.mac_entry.get().strip().lower()  # normalize lowercase
+    with open(DATA_FILE, "w") as f:
+        json.dump(items, f, indent=4)
 
-        if not name or not mac:
-            return
+def log_event(entry):
+    """
+    Appends an entry to the logbook file.
+    """
+    with open(LOGBOOK_FILE, "r") as f:
+        try:
+            logbook = json.load(f)
+            if not isinstance(logbook, list):
+                logbook = []
+        except json.JSONDecodeError:
+            logbook = []
 
-        if not os.path.exists(DATA_FILE):
-            items = {}
-        else:
-            with open(DATA_FILE, "r") as f:
-                items = json.load(f)
+    logbook.append(entry)
 
-        if mac not in items:
-            items[mac] = {
-                "name": name,
-                "last_seen": 0,
-                "location": "unknown",
-                "rssi": 0
-            }
-        else:
-            items[mac]["name"] = name
-
-        with open(DATA_FILE, "w") as f:
-            json.dump(items, f, indent=4)
-
-        self.window.destroy()
+    with open(LOGBOOK_FILE, "w") as f:
+        json.dump(logbook, f, indent=4)
