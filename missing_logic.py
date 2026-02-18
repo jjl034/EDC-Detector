@@ -25,6 +25,12 @@ def load_items():
             return []
 
 
+def save_items(items):
+    """Save updated items back to items.json"""
+    with open(DATA_FILE, "w") as f:
+        json.dump(items, f, indent=4)
+
+
 def log_event(entry):
     """Append an event to the logbook, create file if missing."""
     if not os.path.exists(LOGBOOK_FILE):
@@ -60,10 +66,10 @@ def check_missing_items():
         last_seen = item.get("last_seen", 0)
 
         if required and (current_time - last_seen) > MISSING_TIMEOUT:
-            missing.append(item.get("name", "Unknown"))
+            missing.append(item.get("name"))
             log_event({
                 "timestamp": current_time,
-                "mac": item.get("mac", "Unknown"),
+                "mac": item.get("mac", "").lower(),
                 "event": "missing"
             })
 
