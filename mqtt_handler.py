@@ -1,66 +1,59 @@
-import json
-import time
 import paho.mqtt.client as mqtt
+import json
 from missing_logic import load_items, save_items
 
-DATA_FILE = "data/items.json"
+# --- MQTT Settings ---
+BROKER_IP = "192.168.1.42"  # Replace with your broker IP
+BROKER_PORT = 1883
+TOPIC = "edc/missing"
 
-MQTT_SERVER = "127.0.0.1"  # if broker runs on same Pi
-MQTT_PORT = 1883
-TOPIC_PREFIX = "edc/items/"
+# --- Load items database ---
+items = load_items()  # This is a list of dicts: [{"name": "Wallet", "mac": "...", "last_seen": "..."}]
 
-client = mqtt.Client()
+# --- Callback function placeholder ---
+missing_callback = None  # Will be set from app.py
 
-
+# --- MQTT Event Handlers ---
 def on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT Broker")
-    client.subscribe(f"{TOPIC_PREFIX}+/seen")
-
+    if rc == 0:
+        print("Connected to MQTT broker!")
+        client.subscribe(TOPIC)
+    else:
+        print(f"Failed to connect, return code {rc}")
 
 def on_message(client, userdata, msg):
-    topic = msg.topic
-    payload = msg.payload.decode()
-    print("\nMessage received:")
-    print("Topic:", topic)
-    print("Parsed JSON:", payload)
-
-    # Extract MAC from topic and normalize to lowercase
     try:
-        mac = topic.split("/")[2].lower()
-    except IndexError:
-        print("Invalid topic format:", topic)
-        return
+        payload = msg.payload.decode()
+        data = json.loads(payload)  # Expecting {"mac": "...", "location": "..."}
+        mac = data.get("mac")
+        location = data.get("location", "Unknown Location")
 
-    try:
-        items = load_items()
+        # Find the item with this MAC
+        missing_item = next((item for item in items if item.get("mac") == mac), None)
+        if missing_item:
+            missing_item["last_seen"] = location
+            save_items(items)  # Update last seen
+            print(f"Missing item detected: {missing_item['name']} at {location}")
+
+            # Trigger the GUI popup
+            if missing_callback:
+                missing_callback({
+                    "name": missing_item["name"],
+                    "last_seen": location
+                })
+        else:
+            print(f"Unknown item with MAC {mac} detected at {location}")
     except Exception as e:
-        print("Error loading items:", e)
-        return
+        print("Error processing MQTT message:", e)
 
-    # Update last_seen for matching MAC
-    updated = False
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        if item.get("mac", "").lower() == mac:
-            item["last_seen"] = time.time()
-            updated = True
+# --- Start MQTT Client ---
+def start_mqtt(callback=None):
+    global missing_callback
+    missing_callback = callback
 
-    if updated:
-        save_items(items)
-        print(f"Updated last_seen for MAC: {mac}")
-    else:
-        print(f"No matching item found for MAC: {mac}")
-
-
-def start_mqtt():
+    client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
-    try:
-        client.connect(MQTT_SERVER, MQTT_PORT, 60)
-    except Exception as e:
-        print("Failed to connect to MQTT broker:", e)
-        return
-    client.loop_start()
 
-
+    client.connect(BROKER_IP, BROKER_PORT, 60)
+    client.loop_forever()
