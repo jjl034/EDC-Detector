@@ -16,7 +16,7 @@ def monitor_camera():
     net = cv2.dnn.readNetFromCaffe(PROTOTXT, MODEL)
 
     # Use V4L2 backend (avoids GStreamer warnings)
-    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    cap = cv2.VideoCapture("v4l2src device=/dev/video0 ! videoconvert ! appsink", cv2.CAP_GSTREAMER)
 
     if not cap.isOpened():
         print("Error: Could not open camera.")
@@ -62,6 +62,7 @@ def monitor_camera():
 
         # Slight delay to reduce CPU usage
         time.sleep(0.05)
+
 
 
 
