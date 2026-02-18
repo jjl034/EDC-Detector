@@ -26,14 +26,15 @@ def check_missing_items():
     items = load_items()
     current_time = time.time()
 
-    for mac, item in items.items():
+    for item in items:
         last_seen = item.get("last_seen", 0)
+        required = item.get("required", True)
 
-        if current_time - last_seen > MISSING_TIMEOUT:
-            print(f"Item missing: {mac}")
+        if required and current_time - last_seen > MISSING_TIMEOUT:
+            print(f"Item missing: {item.get('name')} ({item.get('mac')})")
 
             log_event({
                 "timestamp": current_time,
-                "mac": mac,
+                "mac": item.get("mac"),
                 "event": "missing"
             })
