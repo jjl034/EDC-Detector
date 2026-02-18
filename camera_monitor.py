@@ -3,7 +3,7 @@ import time
 from missing_logic import check_missing_items
 
 PROTOTXT = "deploy.prototxt"
-MODEL = "mobilenet_ssd.caffemodel"
+MODEL = "res10_300x300_ssd_iter_140000.caffemodel"
 
 CONFIDENCE_THRESHOLD = 0.5
 PERSON_CLASS_ID = 15
@@ -50,3 +50,4 @@ def monitor_camera():
             last_trigger_time = current_time
 
         time.sleep(0.1)
+
