@@ -6,14 +6,16 @@ PROTOTXT = "deploy.prototxt"
 MODEL = "res10_300x300_ssd_iter_140000.caffemodel"
 
 CONFIDENCE_THRESHOLD = 0.5
-PERSON_CLASS_ID = 15
-COOLDOWN = 5  # seconds
+COOLDOWN = 5  # seconds between triggers
 
 
 def monitor_camera():
     print("Starting camera person detection...")
 
+    # Load face detection model
     net = cv2.dnn.readNetFromCaffe(PROTOTXT, MODEL)
+
+    # Use V4L2 backend (avoids GStreamer warnings)
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
     if not cap.isOpened():
@@ -24,33 +26,42 @@ def monitor_camera():
 
     while True:
         ret, frame = cap.read()
-        print("Reading frame...")
+
         if not ret:
             continue
 
+        # Resize frame for model
         resized = cv2.resize(frame, (300, 300))
-        blob = cv2.dnn.blobFromImage(resized, 0.007843, (300, 300), 127.5)
+
+        # Correct preprocessing for res10 face model
+        blob = cv2.dnn.blobFromImage(
+            resized,
+            1.0,
+            (300, 300),
+            (104.0, 177.0, 123.0)
+        )
+
         net.setInput(blob)
         detections = net.forward()
 
-        person_detected = False
+        face_detected = False
 
         for i in range(detections.shape[2]):
-            class_id = int(detections[0, 0, i, 1])
             confidence = float(detections[0, 0, i, 2])
 
-            if class_id == PERSON_CLASS_ID and confidence > CONFIDENCE_THRESHOLD:
-                person_detected = True
+            if confidence > CONFIDENCE_THRESHOLD:
+                face_detected = True
                 break
 
         current_time = time.time()
 
-        if person_detected and (current_time - last_trigger_time) > COOLDOWN:
-            print("Person detected! Checking missing items...")
+        if face_detected and (current_time - last_trigger_time) > COOLDOWN:
+            print("Face detected! Checking missing items...")
             check_missing_items()
             last_trigger_time = current_time
 
-        time.sleep(0.1)
+        # Slight delay to reduce CPU usage
+        time.sleep(0.05)
 
 
 
