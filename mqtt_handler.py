@@ -5,7 +5,7 @@ from missing_logic import load_items, save_items
 
 DATA_FILE = "data/items.json"
 
-MQTT_SERVER = "localhost"  # Raspberry Pi IP
+MQTT_SERVER = "172.20.10.9"  # Raspberry Pi IP
 MQTT_PORT = 1883
 TOPIC_PREFIX = "edc/items/"
 
@@ -59,4 +59,5 @@ def start_mqtt():
     client.connect(MQTT_SERVER, MQTT_PORT, 60)
     client.loop_start()
     
+
 
