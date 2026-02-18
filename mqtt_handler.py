@@ -5,7 +5,7 @@ from missing_logic import load_items, save_items
 
 DATA_FILE = "data/items.json"
 
-MQTT_SERVER = "127.0.0.1"  # Raspberry Pi IP
+MQTT_SERVER = "127.0.0.1"  # if broker runs on same Pi
 MQTT_PORT = 1883
 TOPIC_PREFIX = "edc/items/"
 
@@ -56,9 +56,9 @@ def on_message(client, userdata, msg):
 def start_mqtt():
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(MQTT_SERVER, MQTT_PORT, 60)
+    try:
+        client.connect(MQTT_SERVER, MQTT_PORT, 60)
+    except Exception as e:
+        print("Failed to connect to MQTT broker:", e)
+        return
     client.loop_start()
-    
-
-
-
