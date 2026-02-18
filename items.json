@@ -1,14 +1,14 @@
 [
-  {
-    "name": "Wallet",
-    "mac": "aa:bb:cc:dd:ee:ff",
-    "required": true,
-    "last_seen": 0
-  },
-  {
-    "name": "Keys",
-    "mac": "11:22:33:44:55:66",
-    "required": true,
-    "last_seen": 0
-  }
+    {
+        "mac": "aa:bb:cc:dd:ee:ff",
+        "name": "Keys",
+        "required": true,
+        "last_seen": 0
+    },
+    {
+        "mac": "11:22:33:44:55:66",
+        "name": "Wallet",
+        "required": true,
+        "last_seen": 0
+    }
 ]
