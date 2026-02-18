@@ -5,7 +5,7 @@ from missing_logic import load_items, save_items
 
 DATA_FILE = "data/items.json"
 
-MQTT_SERVER = "172.20.10.9"  # if broker runs on same Pi
+MQTT_SERVER = "127.0.0.1"  # if broker runs on same Pi
 MQTT_PORT = 1883
 TOPIC_PREFIX = "edc/items/"
 
@@ -62,4 +62,5 @@ def start_mqtt():
         print("Failed to connect to MQTT broker:", e)
         return
     client.loop_start()
+
 
