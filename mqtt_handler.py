@@ -3,7 +3,7 @@ import json
 from missing_logic import load_items, save_items
 
 # --- MQTT Settings ---
-BROKER_IP = "192.168.1.42"  # Replace with your broker IP
+BROKER_IP = "172.20.10.9"  # Replace with your broker IP
 BROKER_PORT = 1883
 TOPIC = "edc/missing"
 
@@ -57,3 +57,4 @@ def start_mqtt(callback=None):
 
     client.connect(BROKER_IP, BROKER_PORT, 60)
     client.loop_forever()
+
