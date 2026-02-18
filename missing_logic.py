@@ -16,7 +16,13 @@ def load_items():
         return []
 
     with open(DATA_FILE, "r") as f:
-        return json.load(f)
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            print("Error: items.json is invalid JSON, resetting file.")
+            with open(DATA_FILE, "w") as fw:
+                json.dump([], fw, indent=4)
+            return []
 
 
 def log_event(entry):
@@ -45,6 +51,11 @@ def check_missing_items():
     missing = []
 
     for item in items:
+        # Skip invalid items
+        if not isinstance(item, dict):
+            print("Skipping invalid item:", item)
+            continue
+
         required = item.get("required", True)
         last_seen = item.get("last_seen", 0)
 
@@ -62,4 +73,3 @@ def check_missing_items():
             print("-", name)
     else:
         print("All required items present.")
-
