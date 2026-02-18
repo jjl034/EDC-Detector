@@ -1,1 +1,14 @@
-{}
+[
+  {
+    "name": "Wallet",
+    "mac": "AA:BB:CC:DD:EE:FF",
+    "required": true,
+    "last_seen": 0
+  },
+  {
+    "name": "Keys",
+    "mac": "11:22:33:44:55:66",
+    "required": true,
+    "last_seen": 0
+  }
+]
