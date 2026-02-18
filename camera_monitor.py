@@ -14,7 +14,7 @@ def monitor_camera():
     print("Starting camera person detection...")
 
     net = cv2.dnn.readNetFromCaffe(PROTOTXT, MODEL)
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
     if not cap.isOpened():
         print("Error: Could not open camera.")
@@ -50,4 +50,5 @@ def monitor_camera():
             last_trigger_time = current_time
 
         time.sleep(0.1)
+
 
