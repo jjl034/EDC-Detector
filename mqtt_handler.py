@@ -6,6 +6,8 @@ MQTT_BROKER = "192.168.1.42"  # replace with your broker IP
 MQTT_PORT = 1883
 MQTT_TOPIC = "edc/items"
 
+mqtt_client = mqtt.Client(callback_api=mqtt.MQTTv5)
+
 # Called when connection to broker is established
 def on_connect(client, userdata, flags, rc):
     print("Connected to MQTT broker with result code", rc)
@@ -45,3 +47,4 @@ def start_mqtt():
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
     return client
+
