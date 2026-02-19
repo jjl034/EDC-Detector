@@ -1,60 +1,47 @@
 import paho.mqtt.client as mqtt
-import json
-from missing_logic import load_items, save_items
+from missing_logic import update_last_seen, check_missing_items, items_list
+from threading import Thread
+import time
 
-# --- MQTT Settings ---
-BROKER_IP = "172.20.10.9"  # Replace with your broker IP
-BROKER_PORT = 1883
-TOPIC = "edc/missing"
+MQTT_BROKER = "192.168.1.42"  # replace with your broker IP
+MQTT_PORT = 1883
+MQTT_TOPIC = "edc/items"
 
-# --- Load items database ---
-items = load_items()  # This is a list of dicts: [{"name": "Wallet", "mac": "...", "last_seen": "..."}]
-
-# --- Callback function placeholder ---
-missing_callback = None  # Will be set from app.py
-
-# --- MQTT Event Handlers ---
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print("Connected to MQTT broker!")
-        client.subscribe(TOPIC)
-    else:
-        print(f"Failed to connect, return code {rc}")
-
+# Callback for MQTT messages
 def on_message(client, userdata, msg):
+    """
+    msg.payload should contain MAC addresses of detected items from ESP32
+    Example payload: b'["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02"]'
+    """
     try:
-        payload = msg.payload.decode()
-        data = json.loads(payload)  # Expecting {"mac": "...", "location": "..."}
-        mac = data.get("mac")
-        location = data.get("location", "Unknown Location")
+        detected_macs = eval(msg.payload.decode())  # convert string list to Python list
+        for mac in detected_macs:
+            update_last_seen(mac)
 
-        # Find the item with this MAC
-        missing_item = next((item for item in items if item.get("mac") == mac), None)
-        if missing_item:
-            missing_item["last_seen"] = location
-            save_items(items)  # Update last seen
-            print(f"Missing item detected: {missing_item['name']} at {location}")
+        # After updating last_seen, check for missing items
+        missing = check_missing_items()
+        for item in missing:
+            # Trigger GUI popup via callback
+            if userdata.get("popup_callback"):
+                userdata["popup_callback"](item)
 
-            # Trigger the GUI popup
-            if missing_callback:
-                missing_callback({
-                    "name": missing_item["name"],
-                    "last_seen": location
-                })
-        else:
-            print(f"Unknown item with MAC {mac} detected at {location}")
     except Exception as e:
         print("Error processing MQTT message:", e)
 
-# --- Start MQTT Client ---
-def start_mqtt(callback=None):
-    global missing_callback
-    missing_callback = callback
-
-    client = mqtt.Client()
-    client.on_connect = on_connect
+def start_mqtt(popup_callback=None):
+    """
+    Start MQTT in a separate thread
+    popup_callback: function(item_dict) called when an item is missing
+    """
+    client = mqtt.Client(userdata={"popup_callback": popup_callback})
     client.on_message = on_message
 
-    client.connect(BROKER_IP, BROKER_PORT, 60)
-    client.loop_forever()
+    client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    client.subscribe(MQTT_TOPIC)
 
+    def loop():
+        client.loop_forever()
+
+    thread = Thread(target=loop)
+    thread.daemon = True
+    thread.start()
