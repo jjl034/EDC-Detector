@@ -183,7 +183,7 @@ class EverydayCarryApp(App):
         sm.add_widget(add_screen)
 
         # ESP32 IP addresses (replace with your ESP32 devices)
-        esp32_addresses = ["192.168.1.50", "192.168.1.51"]
+        esp32_addresses = ["172.20.10.7", "172.20.10.10"]
 
         # Start camera/person detection in thread
         detection_thread = Thread(target=camera_detection_loop, args=(main_screen, esp32_addresses), daemon=True)
@@ -193,3 +193,4 @@ class EverydayCarryApp(App):
 
 if __name__ == "__main__":
     EverydayCarryApp().run()
+
