@@ -2,31 +2,29 @@
 import kivy
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.popup import Popup
 from kivy.clock import Clock
+from kivy.uix.popup import Popup
 from kivy.core.window import Window
 
 import json
 import os
-
-import paho.mqtt.client as mqtt
 from threading import Thread
+import paho.mqtt.client as mqtt
 
 kivy.require("2.3.1")
 
 ITEMS_FILE = "items.json"
-MQTT_BROKER = "172.20.10.9"  # Raspberry Pi IP
-MQTT_PORT = 1883
-MQTT_TOPIC = "edc/devices"
+MQTT_BROKER = "localhost"
+MQTT_TOPIC = "edc/missing"
 
-# ---------------------
-# Items Load/Save
-# ---------------------
+# -------------------------
+# Load/Save Items
+# -------------------------
 def load_items():
     if os.path.exists(ITEMS_FILE):
         with open(ITEMS_FILE, "r") as f:
@@ -43,9 +41,9 @@ def save_items(items):
     with open(ITEMS_FILE, "w") as f:
         json.dump(list(items.values()), f, indent=2)
 
-# ---------------------
-# GUI Popups
-# ---------------------
+# -------------------------
+# Missing Item Popup
+# -------------------------
 def show_missing_popup(item_name, last_seen):
     content = BoxLayout(orientation="vertical", padding=5)
     content.add_widget(Label(text=f"Missing: {item_name}\nLast seen: {last_seen}", font_size=14))
@@ -61,16 +59,15 @@ def show_missing_popup(item_name, last_seen):
     popup.open()
     Clock.schedule_once(lambda dt: popup.dismiss(), 4)
 
-# ---------------------
+# -------------------------
 # Screens
-# ---------------------
+# -------------------------
 class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.items = load_items()
         self.layout = GridLayout(cols=1, spacing=5, padding=10)
         self.add_widget(self.layout)
-
         self.add_btn = Button(text="Add Item", size_hint_y=None, height=40)
         self.add_btn.bind(on_release=self.go_to_add_item)
         self.refresh_dashboard()
@@ -127,32 +124,29 @@ class AddItemScreen(Screen):
     def go_back(self, instance):
         self.manager.current = "main"
 
-# ---------------------
-# MQTT Handling
-# ---------------------
-def on_mqtt_message(client, userdata, msg):
-    try:
-        data = json.loads(msg.payload.decode())
-        mac = data.get("mac", "")
-        location = data.get("location", "Unknown")
-        for item_name, item in userdata["main_screen"].items.items():
-            if item.get("mac", "").lower() == mac.lower():
-                # Update last_seen to ESP32 location
-                Clock.schedule_once(lambda dt, n=item_name, l=location: userdata["main_screen"].update_item_last_seen(n, l))
-    except Exception as e:
-        print("MQTT parse error:", e)
+# -------------------------
+# MQTT Listener for Missing Items
+# -------------------------
+def mqtt_listener(main_screen):
+    def on_message(client, userdata, msg):
+        try:
+            missing_items = json.loads(msg.payload)
+            for item in missing_items:
+                name = item.get("name")
+                location = item.get("last_seen", "Unknown")
+                Clock.schedule_once(lambda dt, n=name, l=location: main_screen.update_item_last_seen(n, l))
+        except:
+            pass
 
-def mqtt_thread(main_screen):
     client = mqtt.Client()
-    client.user_data_set({"main_screen": main_screen})
-    client.on_message = on_mqtt_message
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    client.on_message = on_message
+    client.connect(MQTT_BROKER, 1883, 60)
     client.subscribe(MQTT_TOPIC)
     client.loop_forever()
 
-# ---------------------
+# -------------------------
 # App
-# ---------------------
+# -------------------------
 class EverydayCarryApp(App):
     def build(self):
         sm = ScreenManager()
@@ -161,8 +155,9 @@ class EverydayCarryApp(App):
         sm.add_widget(main_screen)
         sm.add_widget(add_screen)
 
-        # Start MQTT listener thread
-        Thread(target=mqtt_thread, args=(main_screen,), daemon=True).start()
+        # Start MQTT listener in background
+        listener_thread = Thread(target=mqtt_listener, args=(main_screen,), daemon=True)
+        listener_thread.start()
 
         return sm
 
