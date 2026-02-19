@@ -1,49 +1,52 @@
-import database
-import time
+import json
+import os
 
-# Store items globally in memory
-items_list = []  # list of dicts: {"id", "name", "mac", "last_seen"}
+ITEMS_FILE = "items.json"
 
+# Load items from JSON file
 def load_items():
-    """Load items from DB and return as a list of dicts"""
-    global items_list
-    db = database.DB()
-    db_items = db.get_items()  # returns list of tuples from DB
-    items_list = []
-    for row in db_items:
-        item_id, name, desc, mac = row
-        items_list.append({
-            "id": item_id,
-            "name": name,
-            "desc": desc,
-            "mac": mac,
-            "last_seen": None  # default None
-        })
-    return items_list
+    if not os.path.exists(ITEMS_FILE):
+        return []
 
-def save_items():
-    """Save current items back to DB if needed"""
-    db = database.DB()
-    for item in items_list:
-        db.update_item(item["id"], item["name"], item["desc"], item["mac"])
+    try:
+        with open(ITEMS_FILE, "r") as f:
+            items = json.load(f)
+            # Ensure each item has the required keys
+            for item in items:
+                if "name" not in item:
+                    item["name"] = "Unnamed"
+                if "mac" not in item:
+                    item["mac"] = "unknown"
+                if "present" not in item:
+                    item["present"] = True
+                if "last_seen" not in item:
+                    item["last_seen"] = "unknown"
+            return items
+    except json.JSONDecodeError:
+        return []
 
-def check_missing_items():
-    """
-    Return list of items considered 'missing'.
-    For now, any item with last_seen older than some threshold
-    """
-    missing = []
-    now = time.time()
-    for item in items_list:
-        last_seen = item.get("last_seen")
-        if last_seen is None or (now - last_seen) > 60:  # 60 sec threshold
-            missing.append(item)
-    return missing
+# Save items to JSON file
+def save_items(items_list):
+    with open(ITEMS_FILE, "w") as f:
+        json.dump(items_list, f, indent=4)
 
-def update_last_seen(mac):
-    """Update last_seen time for an item based on MAC"""
-    now = time.time()
-    for item in items_list:
-        if item["mac"].lower() == mac.lower():
-            item["last_seen"] = now
+# Optional: Get dict keyed by MAC for quick lookup
+def items_dict():
+    return {item["mac"].lower(): item for item in load_items()}
+
+# Update an item in place
+def update_item(mac, present=None, last_seen=None):
+    items = load_items()
+    mac = mac.lower()
+    updated = False
+    for item in items:
+        if item["mac"].lower() == mac:
+            if present is not None:
+                item["present"] = present
+            if last_seen is not None:
+                item["last_seen"] = last_seen
+            updated = True
             break
+    if updated:
+        save_items(items)
+    return updated
