@@ -1,105 +1,101 @@
-import kivy
+import json
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
-from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
 from kivy.uix.popup import Popup
+from missing_logic import load_items, add_item
+import threading
+import mqtt_handler  # Your MQTT integration
 
-from missing_logic import load_items, save_items
-from mqtt_handler import start_mqtt
+# Global reference for mqtt_handler to call GUI popup
+gui_app = None
 
-kivy.require("2.3.1")
-
-# Global dictionary keyed by MAC
-items = load_items()
-item_dict = {item["mac"].lower(): item for item in items}
-
-# Function to trigger missing item popup
-def trigger_missing_popup(item_name, last_seen):
-    popup = Popup(title="Missing Item Detected",
-                  content=Label(text=f"{item_name} is missing!\nLast seen: {last_seen}"),
-                  size_hint=(0.6, 0.4))
-    popup.open()
-
-
-# ---------- Screens ----------
-class MainScreen(Screen):
+class DashboardScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
-        self.add_widget(self.layout)
-        self.refresh_dashboard()
+        self.layout = BoxLayout(orientation="vertical", spacing=10, padding=10)
+        self.items_layout = BoxLayout(orientation="vertical", spacing=5)
+        self.layout.add_widget(Label(text="Everyday Carry Dashboard", font_size=24, size_hint_y=None, height=40))
+        self.layout.add_widget(self.items_layout)
 
-    def refresh_dashboard(self):
-        self.layout.clear_widgets()
-        self.layout.add_widget(Label(text="Your Items", font_size=24, size_hint_y=None, height=40))
-        grid = GridLayout(cols=2, spacing=5, size_hint_y=None)
-        grid.bind(minimum_height=grid.setter('height'))
-
-        if not item_dict:
-            grid.add_widget(Label(text="No items found"))
-        else:
-            for item in item_dict.values():
-                grid.add_widget(Label(text=item["name"]))
-                status = "Present" if item.get("present", True) else "Missing"
-                grid.add_widget(Label(text=status))
-
-        self.layout.add_widget(grid)
-
-        add_btn = Button(text="Add Item", size_hint_y=None, height=40)
-        add_btn.bind(on_release=lambda x: self.manager.current = "add_item")  # Navigate to AddItemScreen
+        add_btn = Button(text="Add Item", size_hint_y=None, height=50)
+        add_btn.bind(on_release=lambda x: self.manager.current = "add_item")
         self.layout.add_widget(add_btn)
 
+        self.add_widget(self.layout)
+        self.refresh_items()
+
+    def refresh_items(self):
+        self.items_layout.clear_widgets()
+        items = load_items()
+        if not items:
+            self.items_layout.add_widget(Label(text="No items found"))
+        else:
+            for item in items:
+                status = "Present" if item.get("present", True) else "Missing"
+                last = item.get("last_seen", "unknown")
+                self.items_layout.add_widget(Label(text=f"{item['name']} ({status}) - Last seen: {last}"))
 
 class AddItemScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
-        self.add_widget(self.layout)
+        layout = BoxLayout(orientation="vertical", spacing=10, padding=10)
+        layout.add_widget(Label(text="Add New Item", font_size=24, size_hint_y=None, height=40))
 
-        self.name_input = TextInput(hint_text="Item Name", size_hint_y=None, height=40)
-        self.mac_input = TextInput(hint_text="Item MAC Address", size_hint_y=None, height=40)
+        self.name_input = TextInput(hint_text="Item Name", multiline=False)
+        self.mac_input = TextInput(hint_text="Item MAC (xx:xx:xx:xx:xx:xx)", multiline=False)
 
-        self.layout.add_widget(self.name_input)
-        self.layout.add_widget(self.mac_input)
+        layout.add_widget(self.name_input)
+        layout.add_widget(self.mac_input)
 
-        add_btn = Button(text="Add", size_hint_y=None, height=40)
-        add_btn.bind(on_release=self.add_item)
-        self.layout.add_widget(add_btn)
+        save_btn = Button(text="Save Item", size_hint_y=None, height=50)
+        save_btn.bind(on_release=self.save_item)
+        layout.add_widget(save_btn)
 
-        back_btn = Button(text="Back", size_hint_y=None, height=40)
-        back_btn.bind(on_release=lambda x: self.manager.current = "main")
-        self.layout.add_widget(back_btn)
+        back_btn = Button(text="Back to Dashboard", size_hint_y=None, height=50)
+        back_btn.bind(on_release=lambda x: self.manager.current = "dashboard")
+        layout.add_widget(back_btn)
 
-    def add_item(self, instance):
+        self.add_widget(layout)
+
+    def save_item(self, instance):
         name = self.name_input.text.strip()
         mac = self.mac_input.text.strip().lower()
-        if name and mac and mac not in item_dict:
-            new_item = {"name": name, "mac": mac, "present": True, "last_seen": "added via GUI"}
-            item_dict[mac] = new_item
-            save_items(list(item_dict.values()))
-            self.manager.get_screen("main").refresh_dashboard()
+        if name and mac:
+            add_item(name, mac)
             self.name_input.text = ""
             self.mac_input.text = ""
-            self.manager.current = "main"
+            self.manager.get_screen("dashboard").refresh_items()
+            self.manager.current = "dashboard"
         else:
-            popup = Popup(title="Error",
-                          content=Label(text="Invalid name or MAC already exists"),
-                          size_hint=(0.6, 0.4))
+            popup = Popup(title="Error", content=Label(text="Name and MAC are required"), size_hint=(0.7, 0.3))
             popup.open()
 
-
-# ---------- App ----------
 class EverydayCarryApp(App):
     def build(self):
+        global gui_app
+        gui_app = self
+
         sm = ScreenManager()
-        sm.add_widget(MainScreen(name="main"))
+        sm.add_widget(DashboardScreen(name="dashboard"))
         sm.add_widget(AddItemScreen(name="add_item"))
-        start_mqtt()  # Start MQTT in background
+
+        # Start MQTT in a background thread
+        threading.Thread(target=mqtt_handler.start_mqtt, daemon=True).start()
+
         return sm
+
+    # Called by mqtt_handler to show missing item popup
+    def show_missing_item_popup(self, name, last_seen):
+        popup = Popup(title="Missing Item Detected",
+                      content=Label(text=f"Item '{name}' is missing!\nLast seen: {last_seen}"),
+                      size_hint=(0.7, 0.4))
+        popup.open()
+        # Refresh dashboard to update missing status
+        self.root.get_screen("dashboard").refresh_items()
 
 
 if __name__ == "__main__":
