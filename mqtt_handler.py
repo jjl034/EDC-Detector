@@ -2,7 +2,7 @@ import paho.mqtt.client as mqtt
 from missing_logic import load_items, update_item
 from app_gui import gui_app  # reference to your running Kivy app
 
-MQTT_BROKER = "192.168.1.42"  # replace with your broker IP
+MQTT_BROKER = "172.20.10.9"  # replace with your broker IP
 MQTT_PORT = 1883
 MQTT_TOPIC = "edc/items"
 
@@ -47,4 +47,5 @@ def start_mqtt():
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
     return client
+
 
