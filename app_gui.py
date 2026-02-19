@@ -15,14 +15,17 @@ import json
 import os
 from threading import Thread
 import time
-import cv2  # for USB camera detection
+import random
+import cv2  # USB camera
+import requests  # for ESP32 HTTP BLE API simulation
 
 kivy.require('2.3.1')
 
-# File to store items
 ITEMS_FILE = "items.json"
 
-# Load items from JSON file
+# ---------------------
+# Items Load/Save
+# ---------------------
 def load_items():
     if os.path.exists(ITEMS_FILE):
         with open(ITEMS_FILE, "r") as f:
@@ -35,27 +38,26 @@ def load_items():
                 return {}
     return {}
 
-# Save items to JSON file
 def save_items(items):
     with open(ITEMS_FILE, "w") as f:
         json.dump(list(items.values()), f, indent=2)
 
-
-# Small corner popup for missing item
+# ---------------------
+# GUI Popups
+# ---------------------
 def show_missing_popup(item_name, last_seen):
     content = BoxLayout(orientation="vertical", padding=5)
     content.add_widget(Label(text=f"Missing: {item_name}\nLast seen: {last_seen}", font_size=14))
     popup = Popup(title="Missing Item", content=content,
                   size_hint=(None, None), size=(250, 100),
                   auto_dismiss=True, separator_height=0)
-    # Position top-right corner
     popup.pos = (Window.width - 260, Window.height - 120)
     popup.open()
-    # Auto-dismiss after 4 seconds
     Clock.schedule_once(lambda dt: popup.dismiss(), 4)
 
-
+# ---------------------
 # Screens
+# ---------------------
 class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -72,11 +74,9 @@ class MainScreen(Screen):
         self.manager.current = "add_item"
 
     def refresh_dashboard(self):
-        # Remove old labels
         self.layout.clear_widgets()
         for item_name, item in self.items.items():
-            self.layout.add_widget(Label(text=f"{item_name} - Last seen: {item.get('last_seen', 'N/A')}"))
-        # Add the Add Item button again
+            self.layout.add_widget(Label(text=f"{item_name} - Last seen: {item.get('last_seen','N/A')}"))
         add_btn = Button(text="Add Item", size_hint_y=None, height=40)
         add_btn.bind(on_release=self.go_to_add_item)
         self.layout.add_widget(add_btn)
@@ -88,7 +88,9 @@ class MainScreen(Screen):
             self.refresh_dashboard()
             show_missing_popup(item_name, last_seen)
 
-
+# ---------------------
+# Add Item Screen
+# ---------------------
 class AddItemScreen(Screen):
     def __init__(self, main_screen, **kwargs):
         super().__init__(**kwargs)
@@ -96,8 +98,7 @@ class AddItemScreen(Screen):
         layout = BoxLayout(orientation="vertical", padding=10, spacing=5)
         self.name_input = TextInput(hint_text="Item Name", multiline=False, size_hint_y=None, height=40)
         layout.add_widget(self.name_input)
-
-        self.mac_input = TextInput(hint_text="MAC/Identifier (optional)", multiline=False, size_hint_y=None, height=40)
+        self.mac_input = TextInput(hint_text="MAC/ID (optional)", multiline=False, size_hint_y=None, height=40)
         layout.add_widget(self.mac_input)
 
         btn_layout = BoxLayout(size_hint_y=None, height=40, spacing=5)
@@ -124,29 +125,55 @@ class AddItemScreen(Screen):
     def go_back(self, instance):
         self.manager.current = "main"
 
-
-# Camera detection thread (simulates detecting a person)
-def camera_detection_loop(main_screen):
+# ---------------------
+# Camera Detection
+# ---------------------
+def camera_detection_loop(main_screen, esp32_addresses):
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("Camera not detected")
+        print("USB camera not detected")
         return
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        # Simple placeholder: if frame is non-empty, randomly "detect" an item missing
-        time.sleep(5)  # simulate detection interval
-        # For demo, pick a random item to trigger missing popup
-        items = list(main_screen.items.keys())
-        if items:
-            item_name = items[0]
-            last_seen = "Front Door"
-            Clock.schedule_once(lambda dt, n=item_name, l=last_seen: main_screen.update_item_last_seen(n, l))
+        # Simulate person detection
+        person_detected = random.choice([True, False, False])  # 33% chance
+        if person_detected:
+            check_missing_items(main_screen, esp32_addresses)
+        time.sleep(2)
     cap.release()
 
+# ---------------------
+# ESP32 BLE Detection
+# ---------------------
+def check_missing_items(main_screen, esp32_addresses):
+    """
+    Contacts ESP32s via HTTP API to get currently seen BLE tags.
+    Compares with saved items to detect missing ones.
+    """
+    seen_macs = set()
+    for addr in esp32_addresses:
+        try:
+            # Example: ESP32 serves JSON {"seen": ["MAC1", "MAC2"]}
+            resp = requests.get(f"http://{addr}/seen")
+            if resp.status_code == 200:
+                data = resp.json()
+                seen_macs.update(data.get("seen", []))
+        except:
+            continue
 
+    # Detect missing items
+    for item_name, item in main_screen.items.items():
+        mac = item.get("mac", "").lower()
+        if mac and mac not in map(str.lower, seen_macs):
+            last_seen = item.get("last_seen", "Unknown")
+            # Update GUI on main thread
+            Clock.schedule_once(lambda dt, n=item_name, l=last_seen: main_screen.update_item_last_seen(n, l))
+
+# ---------------------
 # App
+# ---------------------
 class EverydayCarryApp(App):
     def build(self):
         sm = ScreenManager()
@@ -155,11 +182,14 @@ class EverydayCarryApp(App):
         sm.add_widget(main_screen)
         sm.add_widget(add_screen)
 
-        # Start camera detection in a thread
-        detection_thread = Thread(target=camera_detection_loop, args=(main_screen,), daemon=True)
-        detection_thread.start()
-        return sm
+        # ESP32 IP addresses (replace with your ESP32 devices)
+        esp32_addresses = ["192.168.1.50", "192.168.1.51"]
 
+        # Start camera/person detection in thread
+        detection_thread = Thread(target=camera_detection_loop, args=(main_screen, esp32_addresses), daemon=True)
+        detection_thread.start()
+
+        return sm
 
 if __name__ == "__main__":
     EverydayCarryApp().run()
