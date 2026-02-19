@@ -1,135 +1,165 @@
-import json
+# app_gui.py
+import kivy
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle
-import os
+from kivy.uix.popup import Popup
+from kivy.core.window import Window
 
+import json
+import os
+from threading import Thread
+import time
+import cv2  # for USB camera detection
+
+kivy.require('2.3.1')
+
+# File to store items
 ITEMS_FILE = "items.json"
 
+# Load items from JSON file
 def load_items():
     if os.path.exists(ITEMS_FILE):
         with open(ITEMS_FILE, "r") as f:
             try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
+                items = json.load(f)
+                if isinstance(items, list):
+                    return {item["name"]: item for item in items}
+                return items
+            except:
+                return {}
+    return {}
 
+# Save items to JSON file
 def save_items(items):
     with open(ITEMS_FILE, "w") as f:
-        json.dump(items, f, indent=2)
+        json.dump(list(items.values()), f, indent=2)
 
-# Custom corner popup for notifications
-class Notification(Label):
-    def __init__(self, text, **kwargs):
-        super().__init__(**kwargs)
-        self.text = text
-        self.size_hint = (None, None)
-        self.size = (250, 50)
-        self.pos_hint = {"right": 0.98, "y": 0.02}  # bottom-right corner
-        self.color = (1, 1, 1, 1)
-        with self.canvas.before:
-            Color(0, 0, 0, 0.8)
-            self.rect = Rectangle(pos=self.pos, size=self.size)
-        self.bind(pos=self.update_rect, size=self.update_rect)
-        Clock.schedule_once(self.dismiss, 5)  # auto-dismiss in 5 seconds
 
-    def update_rect(self, *args):
-        self.rect.pos = self.pos
-        self.rect.size = self.size
+# Small corner popup for missing item
+def show_missing_popup(item_name, last_seen):
+    content = BoxLayout(orientation="vertical", padding=5)
+    content.add_widget(Label(text=f"Missing: {item_name}\nLast seen: {last_seen}", font_size=14))
+    popup = Popup(title="Missing Item", content=content,
+                  size_hint=(None, None), size=(250, 100),
+                  auto_dismiss=True, separator_height=0)
+    # Position top-right corner
+    popup.pos = (Window.width - 260, Window.height - 120)
+    popup.open()
+    # Auto-dismiss after 4 seconds
+    Clock.schedule_once(lambda dt: popup.dismiss(), 4)
 
-    def dismiss(self, dt):
-        if self.parent:
-            self.parent.remove_widget(self)
 
 # Screens
 class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
-        self.item_container = BoxLayout(orientation="vertical", spacing=5)
-        layout.add_widget(self.item_container)
+        self.items = load_items()
+        self.layout = GridLayout(cols=1, spacing=5, padding=10)
+        self.add_widget(self.layout)
+        self.refresh_dashboard()
 
-        btn_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        add_btn = Button(text="Add Item")
-        add_btn.bind(on_release=lambda x: self.manager.current_screen.manager.current="add_item")
-        btn_layout.add_widget(add_btn)
-        layout.add_widget(btn_layout)
-        self.add_widget(layout)
-        self.refresh_items()
+        add_btn = Button(text="Add Item", size_hint_y=None, height=40)
+        add_btn.bind(on_release=self.go_to_add_item)
+        self.layout.add_widget(add_btn)
 
-    def refresh_items(self):
-        self.item_container.clear_widgets()
-        items = load_items()
-        if not items:
-            self.item_container.add_widget(Label(text="No items found"))
-        for item in items:
-            self.item_container.add_widget(Label(text=f"{item['name']} (Last seen: {item.get('last_seen','Unknown')})"))
+    def go_to_add_item(self, instance):
+        self.manager.current = "add_item"
+
+    def refresh_dashboard(self):
+        # Remove old labels
+        self.layout.clear_widgets()
+        for item_name, item in self.items.items():
+            self.layout.add_widget(Label(text=f"{item_name} - Last seen: {item.get('last_seen', 'N/A')}"))
+        # Add the Add Item button again
+        add_btn = Button(text="Add Item", size_hint_y=None, height=40)
+        add_btn.bind(on_release=self.go_to_add_item)
+        self.layout.add_widget(add_btn)
+
+    def update_item_last_seen(self, item_name, last_seen):
+        if item_name in self.items:
+            self.items[item_name]["last_seen"] = last_seen
+            save_items(self.items)
+            self.refresh_dashboard()
+            show_missing_popup(item_name, last_seen)
+
 
 class AddItemScreen(Screen):
-    def __init__(self, **kwargs):
+    def __init__(self, main_screen, **kwargs):
         super().__init__(**kwargs)
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
-        self.name_input = TextInput(hint_text="Item Name", multiline=False)
-        self.mac_input = TextInput(hint_text="Item MAC/ID", multiline=False)
+        self.main_screen = main_screen
+        layout = BoxLayout(orientation="vertical", padding=10, spacing=5)
+        self.name_input = TextInput(hint_text="Item Name", multiline=False, size_hint_y=None, height=40)
         layout.add_widget(self.name_input)
+
+        self.mac_input = TextInput(hint_text="MAC/Identifier (optional)", multiline=False, size_hint_y=None, height=40)
         layout.add_widget(self.mac_input)
 
-        btn_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        save_btn = Button(text="Save Item")
+        btn_layout = BoxLayout(size_hint_y=None, height=40, spacing=5)
+        save_btn = Button(text="Save")
         save_btn.bind(on_release=self.save_item)
-        cancel_btn = Button(text="Cancel")
-        cancel_btn.bind(on_release=lambda x: self.manager.current="main")
+        back_btn = Button(text="Back")
+        back_btn.bind(on_release=self.go_back)
         btn_layout.add_widget(save_btn)
-        btn_layout.add_widget(cancel_btn)
+        btn_layout.add_widget(back_btn)
 
         layout.add_widget(btn_layout)
         self.add_widget(layout)
 
     def save_item(self, instance):
-        items = load_items()
-        items.append({
-            "name": self.name_input.text.strip(),
-            "mac": self.mac_input.text.strip(),
-            "last_seen": "Just Added"
-        })
-        save_items(items)
-        self.manager.current = "main"
-        self.manager.get_screen("main").refresh_items()
+        name = self.name_input.text.strip()
+        mac = self.mac_input.text.strip()
+        if not name:
+            return
+        self.main_screen.items[name] = {"name": name, "mac": mac, "last_seen": "Never"}
+        save_items(self.main_screen.items)
+        self.main_screen.refresh_dashboard()
+        self.go_back(instance)
 
-# Main app
+    def go_back(self, instance):
+        self.manager.current = "main"
+
+
+# Camera detection thread (simulates detecting a person)
+def camera_detection_loop(main_screen):
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Camera not detected")
+        return
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        # Simple placeholder: if frame is non-empty, randomly "detect" an item missing
+        time.sleep(5)  # simulate detection interval
+        # For demo, pick a random item to trigger missing popup
+        items = list(main_screen.items.keys())
+        if items:
+            item_name = items[0]
+            last_seen = "Front Door"
+            Clock.schedule_once(lambda dt, n=item_name, l=last_seen: main_screen.update_item_last_seen(n, l))
+    cap.release()
+
+
+# App
 class EverydayCarryApp(App):
     def build(self):
         sm = ScreenManager()
-        sm.add_widget(MainScreen(name="main"))
-        sm.add_widget(AddItemScreen(name="add_item"))
-        Clock.schedule_interval(self.check_missing_items, 2)  # check every 2 seconds
+        main_screen = MainScreen(name="main")
+        add_screen = AddItemScreen(main_screen, name="add_item")
+        sm.add_widget(main_screen)
+        sm.add_widget(add_screen)
+
+        # Start camera detection in a thread
+        detection_thread = Thread(target=camera_detection_loop, args=(main_screen,), daemon=True)
+        detection_thread.start()
         return sm
 
-    # Corner popup
-    def show_notification(self, message):
-        notification = Notification(text=message)
-        self.root.add_widget(notification)
-
-    # Placeholder camera detection callback
-    def check_missing_items(self, dt):
-        """
-        This function should be linked to your camera detection logic.
-        When an item is missing, call self.show_notification with its name & last_seen.
-        """
-        items = load_items()
-        # Example simulation for testing:
-        for item in items:
-            if item.get("last_seen") != "Present":
-                self.show_notification(f"Missing: {item['name']}\nLast seen: {item.get('last_seen','Unknown')}")
-                item["last_seen"] = "Present"  # simulate detection reset
-        save_items(items)
 
 if __name__ == "__main__":
     EverydayCarryApp().run()
