@@ -1,4 +1,5 @@
 # app_gui.py
+from datetime import datetime
 import kivy
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
@@ -64,24 +65,34 @@ class MainScreen(Screen):
         self.items = load_items()
         self.layout = GridLayout(cols=1, spacing=5, padding=10)
         self.add_widget(self.layout)
-
-        add_btn = Button(text="Add Item", size_hint_y=None, height=40)
-        add_btn.bind(on_release=self.go_to_add_item)
         self.refresh_dashboard()
 
     def go_to_add_item(self, instance):
         self.manager.current = "add_item"
 
     def refresh_dashboard(self):
-        if not hasattr(self, "add_btn"):
-            self.add_btn = Button(text="Add Item", size_hint_y=None, height=40)
-            self.add_btn.bind(on_release=self.go_to_add_item)
         self.layout.clear_widgets()
+
         for item_name, item in self.items.items():
+            location = item.get("last_seen_location", "Unknown")
+            timestamp = item.get("last_seen_time", "Never")
+
             self.layout.add_widget(
-                Label(text=f"{item_name} - Last seen: {item.get('last_seen','N/A')}")
+                Label(text=f"{item_name} - Last seen: {timestamp} at {location}")
             )
-        self.layout.add_widget(self.add_btn)
+
+            add_btn = Button(text = "Add Item", size_hint_y=None, height=40)
+            add_btn.bind(on_release=self.go_to_add_item)
+            self.layout.add_widget(add_btn)
+        # if not hasattr(self, "add_btn"):
+        #     self.add_btn = Button(text="Add Item", size_hint_y=None, height=40)
+        #     self.add_btn.bind(on_release=self.go_to_add_item)
+        # self.layout.clear_widgets()
+        # for item_name, item in self.items.items():
+        #     self.layout.add_widget(
+        #         Label(text=f"{item_name} - Last seen: {item.get('last_seen','N/A')}")
+        #     )
+        # self.layout.add_widget(self.add_btn)
 
     def update_item_last_seen(self, item_name, last_seen):
         if item_name in self.items:
@@ -154,24 +165,36 @@ def check_missing_items(main_screen, esp32_addresses):
     Contacts ESP32s via HTTP API to get currently seen BLE tags.
     Compares with saved items to detect missing ones.
     """
-    seen_macs = set()
+    # seen_macs = set()
     for addr in esp32_addresses:
         try:
             # Example: ESP32 serves JSON {"seen": ["MAC1", "MAC2"]}
-            resp = requests.get(f"http://{addr}/seen")
+            resp = requests.get(f"http://{addr}/seen", timeout=2)
             if resp.status_code == 200:
-                data = resp.json()
-                seen_macs.update(data.get("seen", []))
+                continue
+                
+            data = resp.json()
+            location = data.get("location", addr)
+            seen_macs = {m.lower() for m in data.get("seen", [])}
+
+            for item_name, item in main_screen.items.items():
+                mac = item.get("mac", "").lower()
+                
+                if not mac:
+                    continue
+                if mac in seen_macs:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    Clock.schedule_once(lambda dt, n=item_name, loc=location, ts=timestamp:main_screen.update_item_last_seen(n, loc, ts))
         except:
             continue
 
-    # Detect missing items
-    for item_name, item in main_screen.items.items():
-        mac = item.get("mac", "").lower()
-        if mac and mac not in map(str.lower, seen_macs):
-            last_seen = item.get("last_seen", "Unknown")
-            # Update GUI on main thread
-            Clock.schedule_once(lambda dt, n=item_name, l=last_seen: main_screen.update_item_last_seen(n, l))
+    # # Detect missing items
+    # for item_name, item in main_screen.items.items():
+    #     mac = item.get("mac", "").lower()
+    #     if mac and mac not in map(str.lower, seen_macs):
+    #         last_seen = item.get("last_seen", "Unknown")
+    #         # Update GUI on main thread
+    #         Clock.schedule_once(lambda dt, n=item_name, l=last_seen: main_screen.update_item_last_seen(n, l))
 
 # ---------------------
 # App
