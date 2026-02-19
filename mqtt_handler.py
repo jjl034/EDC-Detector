@@ -1,47 +1,54 @@
+import json
+import threading
 import paho.mqtt.client as mqtt
-from missing_logic import update_last_seen, check_missing_items, items_list
-from threading import Thread
-import time
+from missing_logic import load_items, save_items
+from app_gui import trigger_missing_popup  # Function to show popup in GUI
 
-MQTT_BROKER = "192.168.1.42"  # replace with your broker IP
-MQTT_PORT = 1883
-MQTT_TOPIC = "edc/items"
+# MQTT broker settings
+BROKER = "192.168.1.42"  # Your Raspberry Pi IP
+PORT = 1883
+TOPIC = "edc/items"
 
-# Callback for MQTT messages
+# Load items from JSON file
+items = load_items()  # Format: [{"name": "Wallet", "mac": "AA:BB:CC:DD:EE:01", "last_seen": "..."}]
+
+# Convert list to dict keyed by MAC for easy lookup
+item_dict = {item["mac"].lower(): item for item in items}
+
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print("MQTT connected")
+        client.subscribe(TOPIC)
+    else:
+        print("MQTT connection failed with code", rc)
+
 def on_message(client, userdata, msg):
-    """
-    msg.payload should contain MAC addresses of detected items from ESP32
-    Example payload: b'["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02"]'
-    """
     try:
-        detected_macs = eval(msg.payload.decode())  # convert string list to Python list
-        for mac in detected_macs:
-            update_last_seen(mac)
-
-        # After updating last_seen, check for missing items
-        missing = check_missing_items()
-        for item in missing:
-            # Trigger GUI popup via callback
-            if userdata.get("popup_callback"):
-                userdata["popup_callback"](item)
-
+        payload = json.loads(msg.payload.decode())
+        # payload format: {"AA:BB:CC:DD:EE:01": true, "AA:BB:CC:DD:EE:02": false}
+        for mac, present in payload.items():
+            mac = mac.lower()
+            if mac in item_dict:
+                item = item_dict[mac]
+                if not present and item.get("present", True):  # Only trigger once
+                    item["present"] = False
+                    trigger_missing_popup(item["name"], item.get("last_seen", "unknown"))
+                elif present:
+                    item["present"] = True
+                    item["last_seen"] = "ESP32 detected"  # Update last seen info
+        # Save updated items to file
+        save_items(list(item_dict.values()))
     except Exception as e:
         print("Error processing MQTT message:", e)
 
-def start_mqtt(popup_callback=None):
-    """
-    Start MQTT in a separate thread
-    popup_callback: function(item_dict) called when an item is missing
-    """
-    client = mqtt.Client(userdata={"popup_callback": popup_callback})
+def start_mqtt():
+    client = mqtt.Client()
+    client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    client.subscribe(MQTT_TOPIC)
+    client.connect(BROKER, PORT, 60)
 
-    def loop():
-        client.loop_forever()
-
-    thread = Thread(target=loop)
+    # Run MQTT loop in background thread so GUI stays responsive
+    thread = threading.Thread(target=client.loop_forever)
     thread.daemon = True
     thread.start()
