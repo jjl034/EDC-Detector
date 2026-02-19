@@ -1,54 +1,47 @@
-import json
-import threading
 import paho.mqtt.client as mqtt
-from missing_logic import load_items, save_items
-from app_gui import trigger_missing_popup  # Function to show popup in GUI
+from missing_logic import load_items, update_item
+from app_gui import gui_app  # reference to your running Kivy app
 
-# MQTT broker settings
-BROKER = "192.168.1.42"  # Your Raspberry Pi IP
-PORT = 1883
-TOPIC = "edc/items"
+MQTT_BROKER = "192.168.1.42"  # replace with your broker IP
+MQTT_PORT = 1883
+MQTT_TOPIC = "edc/items"
 
-# Load items from JSON file
-items = load_items()  # Format: [{"name": "Wallet", "mac": "AA:BB:CC:DD:EE:01", "last_seen": "..."}]
-
-# Convert list to dict keyed by MAC for easy lookup
-item_dict = {item["mac"].lower(): item for item in items}
-
+# Called when connection to broker is established
 def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print("MQTT connected")
-        client.subscribe(TOPIC)
-    else:
-        print("MQTT connection failed with code", rc)
+    print("Connected to MQTT broker with result code", rc)
+    client.subscribe(MQTT_TOPIC)
 
+# Called when a message is received
 def on_message(client, userdata, msg):
+    payload = msg.payload.decode()
+    # Expected payload format: {"mac": "xx:xx:xx:xx", "present": false, "last_seen": "Front Door"}
     try:
-        payload = json.loads(msg.payload.decode())
-        # payload format: {"AA:BB:CC:DD:EE:01": true, "AA:BB:CC:DD:EE:02": false}
-        for mac, present in payload.items():
-            mac = mac.lower()
-            if mac in item_dict:
-                item = item_dict[mac]
-                if not present and item.get("present", True):  # Only trigger once
-                    item["present"] = False
-                    trigger_missing_popup(item["name"], item.get("last_seen", "unknown"))
-                elif present:
-                    item["present"] = True
-                    item["last_seen"] = "ESP32 detected"  # Update last seen info
-        # Save updated items to file
-        save_items(list(item_dict.values()))
-    except Exception as e:
-        print("Error processing MQTT message:", e)
+        import json
+        data = json.loads(payload)
+        mac = data.get("mac", "").lower()
+        present = data.get("present", True)
+        last_seen = data.get("last_seen", "unknown")
 
+        # Update local items.json
+        updated = update_item(mac, present=present, last_seen=last_seen)
+
+        # If the item is missing, trigger popup in GUI
+        if not present and updated:
+            item = [i for i in load_items() if i["mac"].lower() == mac][0]
+            name = item.get("name", "Unknown")
+            last = item.get("last_seen", "unknown")
+            if gui_app:  # make sure the GUI app is running
+                gui_app.show_missing_item_popup(name, last)
+
+    except Exception as e:
+        print("Error handling MQTT message:", e)
+
+# Start MQTT client
 def start_mqtt():
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(BROKER, PORT, 60)
-
-    # Run MQTT loop in background thread so GUI stays responsive
-    thread = threading.Thread(target=client.loop_forever)
-    thread.daemon = True
-    thread.start()
+    client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    client.loop_start()
+    return client
