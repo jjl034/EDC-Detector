@@ -64,22 +64,24 @@ class MainScreen(Screen):
         self.items = load_items()
         self.layout = GridLayout(cols=1, spacing=5, padding=10)
         self.add_widget(self.layout)
-        self.refresh_dashboard()
 
         add_btn = Button(text="Add Item", size_hint_y=None, height=40)
         add_btn.bind(on_release=self.go_to_add_item)
-        self.layout.add_widget(add_btn)
+        self.refresh_dashboard()
 
     def go_to_add_item(self, instance):
         self.manager.current = "add_item"
 
     def refresh_dashboard(self):
+        if not hasattr(self, "add_btn"):
+            self.add_btn = Button(text="Add Item", size_hint_y=None, height=40)
+            self.add_btn.bind(on_release=self.go_to_add_item)
         self.layout.clear_widgets()
         for item_name, item in self.items.items():
-            self.layout.add_widget(Label(text=f"{item_name} - Last seen: {item.get('last_seen','N/A')}"))
-        add_btn = Button(text="Add Item", size_hint_y=None, height=40)
-        add_btn.bind(on_release=self.go_to_add_item)
-        self.layout.add_widget(add_btn)
+            self.layout.add_widget(
+                Label(text=f"{item_name} - Last seen: {item.get('last_seen','N/A')}")
+            )
+        self.layout.add_widget(self.add_btn)
 
     def update_item_last_seen(self, item_name, last_seen):
         if item_name in self.items:
@@ -98,7 +100,7 @@ class AddItemScreen(Screen):
         layout = BoxLayout(orientation="vertical", padding=10, spacing=5)
         self.name_input = TextInput(hint_text="Item Name", multiline=False, size_hint_y=None, height=40)
         layout.add_widget(self.name_input)
-        self.mac_input = TextInput(hint_text="MAC/ID (optional)", multiline=False, size_hint_y=None, height=40)
+        self.mac_input = TextInput(hint_text="MAC/ID", multiline=False, size_hint_y=None, height=40)
         layout.add_widget(self.mac_input)
 
         btn_layout = BoxLayout(size_hint_y=None, height=40, spacing=5)
